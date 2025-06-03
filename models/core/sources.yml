@@ -3,10 +3,11 @@ version: 2
 sources:
   - name: staging
     database: footballdataproject-458811
-    schema: dbt_jfairclough
+    schema: APIFootballSource
     tables:
       - name: stg_teams
       - name: stg_fixtures
-      - name: stg_players
+      - name: stg_player_stats
+      - name: stg_player_info
       - name: stg_leagues
       - name: stg_match_events
