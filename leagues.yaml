@@ -1,0 +1,63 @@
+leagues:
+  spain:
+    la_liga: 140
+    segunda_division: 141
+    copa_del_rey: 143
+
+  scotland:
+    premiership: 179
+    championship: 180
+    scottish_cup: 181
+    scottish_league_cup: 185
+
+  germany:
+    bundesliga: 78
+    2_bundesliga: 79
+    dfb_pokal: 81
+
+  austria:
+    bundesliga: 56
+    2_liga: 57
+
+  belgium:
+    first_division_a: 63
+    challenger_pro_league: 65
+
+  netherlands:
+    eredivisie: 88
+    eerste_divisie: 89
+
+  portugal:
+    primeira_liga: 94
+    segunda_liga: 95
+
+  england:
+    premier_league: 39
+    championship: 40
+    fa_cup: 45
+    english_league_cup: 48
+
+  france:
+    ligue_1: 61
+    ligue_2: 62
+    coupe_de_france: 66
+
+  italy:
+    serie_a: 135
+    serie_b: 136
+    coppa_italia: 137
+
+  european_cups:
+    champions_league: 2
+    europa_league: 3
+    conference_league: 848
+
+seasons: 
+  2023_2024: 2024
+  2022_2023: 2023
+  2021_2022: 2022
+  2020_2021: 2021
+  2019_2020: 2020
+  2018_2019: 2019
+  2017_2018: 2018
+  2016_2017: 2017

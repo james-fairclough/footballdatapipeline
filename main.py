@@ -10,186 +10,67 @@ from flask import Flask, request
 import os
 import threading 
 from datetime import datetime, timezone
-import pyarrow as pa
+import yaml
+import GCPBQUpadates as bqu
+import sourceData as sd
+import SportsDataAPIRequests as api
 
 season = str(datetime.now().year)
 
-###################   API Requests   ###################
+################   YAML Config File Reading   ###################
 
-# Retrieves the list of datasets from the BigQuery project
-def getDatasets():
-    client = bq.Client(project='footballdataproject-458811')  # Instantiate BigQuery client
-    datasets = list(client.list_datasets())  # List all datasets in the project
-    project = client.project
-    print("Datasets in project {}:".format(project))
-    for dataset in datasets:
-        print("\t{}".format(dataset.dataset_id))  # Print each dataset ID
+def get_league_ids(country):
+    file_path = os.path.join(app.root_path, "leagues.yaml")
+    with open(file_path, "r") as file:
+        league_ids = yaml.safe_load(file)
 
-# Retrieves the secret API key stored in Google Secret Manager
-def getSecret():
-    client = sm.SecretManagerServiceClient()
-    name = f"projects/footballdataproject-458811/secrets/Sport-Data-Keys/versions/1"  # Secret resource name
-    response = client.access_secret_version(request={"name": name})  # Access the secret
-    return response.payload.data.decode("UTF-8")  # Decode and return the secret value
+    return league_ids["leagues"][country].values()
 
-# Fetches team data from the AFL API and returns it as a DataFrame
-def getTeams(secret):
-    headers = {
-        'x-rapidapi-key': secret,
-        'x-rapidapi-host': 'v3.football.api-sports.io'
-    }
-    url = "https://v3.football.api-sports.io/teams?country=england"
-    payload = {}
-    r = make_request_with_retries(url, headers, payload)  # API request with retry logic
-    r = json.loads(r.text)['response']  # Parse response
-    r = pd.json_normalize(r, sep='_')
-    return r  # Return as DataFrame
+def get_all_league_ids():
+    file_path = os.path.join(app.root_path, "leagues.yaml")
+    with open(file_path, "r") as file:
+        league_ids = yaml.safe_load(file)
 
-def getLeagues(secret):
-    headers = {
-        'x-rapidapi-key': secret,
-        'x-rapidapi-host': 'v3.football.api-sports.io'
-    }
-    url = "https://v3.football.api-sports.io/leagues?country=England"
-    payload = {}
-    r = make_request_with_retries(url, headers, payload)  # API request with retry logic
-    r = json.loads(r.text)['response']  # Parse response
-    r = pd.json_normalize(r, sep='_')
-    return r  # Return as DataFrame
+    league_values = []  # Initialize an empty list
 
-def getFixtures(secret,season,league):
-    headers = {
-        'x-rapidapi-key': secret,
-        'x-rapidapi-host': 'v3.football.api-sports.io'
-    }
-    url = f"https://v3.football.api-sports.io/fixtures?league={league}&season={season}"
-    payload = {}
-    r = make_request_with_retries(url, headers, payload)  # API request with retry logic
-    r = json.loads(r.text)['response']  # Parse response
-    r = pd.json_normalize(r, sep='_')
-    return r  # Return as DataFrame
+    # Loop through each country in the YAML
+    for country, leagues in league_ids["leagues"].items():
+        # Loop through each league ID (values)
+        for league_id in leagues.values():
+            league_values.append(league_id)  # Store league ID
+    return league_values
 
-def getPlayers(secret,season,league, page = 1, player_data = pd.DataFrame()):
-    headers = {
-        'x-rapidapi-key': secret,
-        'x-rapidapi-host': 'v3.football.api-sports.io'
-    }
-    url = f"https://v3.football.api-sports.io/players?league={league}&season={season}&page={page}"
-    payload = {}
-    r = make_request_with_retries(url, headers, payload)  # API request with retry logic
-    p = json.loads(r.text)['paging']
-    r = json.loads(r.text)['response']
-    r = pd.json_normalize(r, sep='_')
-    r = r.drop('statistics', axis=1)
-    
-    player_data = pd.concat([player_data, r], ignore_index=True)
 
-    if p["current"] < p["total"]:
-        page = p["current"] + 1
+def get_all_countries():
+    file_path = os.path.join(app.root_path, "leagues.yaml")
+    with open(file_path, "r") as file:
+        league_data = yaml.safe_load(file)
 
-        if page == 4:
-            return player_data # added as current sub doesnt allow access past page 3
-        
-        player_data = getPlayers(secret,season,league, page, player_data)
+    country_names = []  # Initialize an empty list
 
-    return player_data  
+    for country in league_data["leagues"]:
+        country_names.append(country)  # Store country name
 
-def getMatchEvents(secret,season,league):
-    
-    fixtures = getFixtures(secret,season,league)["fixture_id"]
-    all_match_events = pd.DataFrame()
+    return country_names
 
-    headers = {
-        'x-rapidapi-key': secret,
-        'x-rapidapi-host': 'v3.football.api-sports.io'
-    }
-    payload = {}
+def load_league_lookup():
+    with open("leagues.yaml", "r") as file:
+        league_data = yaml.safe_load(file)
 
-    request_counter = 0 
+    # Create a dictionary mapping IDs to league names
+    league_lookup = {}
+    for country, leagues in league_data["leagues"].items():
+        for league_name, league_id in leagues.items():
+            league_lookup[league_id] = league_name  # Store ID as key, name as value
 
-    for f in fixtures:
-        request_counter += 1
-        url = f"https://v3.football.api-sports.io/fixtures/events?fixture={f}"
-        r = make_request_with_retries(url, headers, payload)  # API request with retry logic
-        events = json.loads(r.text)['response']  # Parse response
-        for event in events:
-            event['fixture_id'] = f  # add fixture ID to each event
-        events = pd.json_normalize(events, sep='_')
-        all_match_events = pd.concat([all_match_events, events], ignore_index=True)
+    return league_lookup
 
-        if request_counter == 10: 
-            break # added so that dont exceed sub limits
+league_lookup_dict = load_league_lookup()
 
-    return all_match_events  # Return as DataFrame
+def get_league_name_by_id(league_id):
+    return league_lookup_dict.get(league_id, "League ID not found")
 
-# Helper function to handle API requests with retries
-def make_request_with_retries(url, headers, payload):
-    retries = 0
-    while retries < 3:  # Retry up to 3 times
-        try:
-            r = requests.request("GET", url, headers=headers, data=payload)  # Make API request
-            if r and r.text:  # Check for a valid response
-                return r
-            else:
-                print(f"Attempt {retries + 1}: Empty response. Retrying...")
-        except requests.RequestException as e:
-            print(f"Attempt {retries + 1}: Error occurred: {e}. Retrying...")
-        retries += 1
-        sleep(1)  # Wait before retrying
 
-###################   GCP BigQuery Table Updates   ###################
-
-# Replaces a BigQuery table with new data
-def replaceTable(table, df):
-    t = 'APIFootballSource.' + table  # Define table name
-    df = clean_dataframe(df)
-    pandas_gbq.to_gbq(df, t, project_id='footballdataproject-458811', if_exists='replace')  # Replace table
-    createLog(table, "Replace")  # Log the action
-
-# Appends new data to an existing BigQuery table
-def updateTable(table, df):
-    t = 'APIFootballSource.' + table
-    pandas_gbq.to_gbq(df, t, project_id='footballdataproject-458811', if_exists='append')
-    createLog(table, "Update")
-
-# Creates a new BigQuery table if it doesn't exist
-def createTable(table, df, schema):
-    t = 'APIFootballSource.' + table
-    pandas_gbq.to_gbq(df, t, project_id='footballdataproject-458811', if_exists='fail', table_schema=schema)
-    createLog(table, "Create")
-
-# Logs table actions to a logging table in BigQuery
-def createLog(t, action):
-    current_utc_time = datetime.now(timezone.utc)  # Get current UTC time
-    data = {"table": t, "utctimestamp": current_utc_time, "action": action}  # Create log data
-    df = pd.DataFrame([data])  # Convert to DataFrame
-    pandas_gbq.to_gbq(df, "APIFootballSource.Logs", project_id='footballdataproject-458811', if_exists='append')  # Append log to BigQuery
-
-# Clean DF
-def clean_dataframe(df):
-    # Ensure all int64 columns are numeric, filling invalid values with 0
-    int_columns = df.select_dtypes(include=['int64']).columns
-    for col in int_columns:
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype('int64')
-        print(str(col) + " int")  
-
-    # Ensure datetime columns are parsed correctly
-    datetime_columns = df.select_dtypes(include=['datetime64[ns]']).columns
-    for col in datetime_columns:
-        df[col] = pd.to_datetime(df[col], errors='coerce')
-        print(str(col) + " date")
-
-    # Ensure string columns are consistent and replace NaN with empty strings
-    str_columns = df.select_dtypes(include=['string']).columns
-    for col in str_columns:
-        df[col] = df[col].fillna('').astype('str')
-        print(str(col) + " str")
-
-    for col, dtype in df.dtypes.items():
-        print(f"Column: {col}, Data Type: {dtype}")
-    df = df.fillna('').astype('str')
-    print(df)
-    return df
 
 ###################   Flask App   ###################
 
@@ -199,71 +80,132 @@ app = Flask(__name__)
 # Endpoint to update leagues data
 @app.route("/leagues")
 def updateLeagues():
-    secret = getSecret()
-    leagues = getLeagues(secret)
-    replaceTable('Leagues', leagues)
+    country = request.args.get('country') 
+    secret = sd.getSecret()
+    if season == None:
+        season = datetime.now().year if datetime.now().month > 6 else datetime.now().year - 1
+    leagues = api.getLeagues(secret, country)
+    bqu.replaceTable(f'Leagues_{country}', leagues)
     return "Leagues updated successfully!", 200
 
 # Endpoint to update fixtures data
-@app.route("/plfixtures")
+@app.route("/fixtures")
 def updateFixtures():
     season = request.args.get('season') 
-    secret = getSecret()
-    if season == "":
-        season = str(datetime.now().year)
-    fixtures = getFixtures(secret,season,39)
-    replaceTable('Fixtures_PL_' + season, fixtures)
+    secret = sd.getSecret()
+    if season == None:
+        season = datetime.now().year if datetime.now().month > 6 else datetime.now().year - 1
+    fixtures = api.getFixtures(secret,season,39)
+    bqu.replaceTable('Fixtures_PL_' + season, fixtures)
     return f"PL {season} season fixtures updated successfully!", 200
 
 # Endpoint to add players data   
-@app.route("/plplayers")
-def updatePlayers():
+def updatePlayers(season, country):
+    secret = sd.getSecret()
+    leagues = get_league_ids(country)
+
+    for league in leagues:
+        print(f"fetching players for league {league} and season {season}")
+        players = api.getPlayers(secret,season,league)
+        bqu.replaceTable(f'Players_info_{country}_{get_league_name_by_id(league)}_{season}', players)
+
+    print(f"PL {season} season players updated successfully!")
+
+@app.route("/players")
+def updatePlayersRoute():
     season = request.args.get('season') 
-    secret = getSecret()
+    country = request.args.get('country', 'england')  # Default to 'england' if not provided
+    if season == None:
+        season = datetime.now().year if datetime.now().month > 6 else datetime.now().year - 1
+
+    updatePlayers(season, country)
+    return f"{country}, {season} season players' stats updated successfully!", 200
+
+# Endpoint to add players data   
+def updatePlayersStats(season, country):
+    secret = sd.getSecret() # Fetch secret API key
+    leagues = get_league_ids(country) # Fetch league IDs from YAML config
+
+    for league in leagues:
+        print(f"fetching players stats for league {league} and season {season}")
+        players = api.getPlayerStatistics(secret,season,league)
+        bqu.replaceTable(f'Players_stats_{country}_{get_league_name_by_id(league)}_{season}', players)
+
+    print(f"{country}, {season} season players' stats updated successfully!")
+
+@app.route("/playerstats")
+def updatePlayersStatsRoute():
+    season = request.args.get('season') 
+    country = request.args.get('country','england') 
+
+    if season == None:
+        season = datetime.now().year if datetime.now().month > 6 else datetime.now().year - 1
+
+    updatePlayersStats(season, country)
+
+    return f"{country}, {season} season players' stats updated successfully!", 200
+
+
+#Update teams data
+
+def updateTeams(country):
+    secret = sd.getSecret()
+    teams = api.getTeams(secret, country)
+    bqu.replaceTable('Teams', teams)
+    print(f"{country} teams' updated successfully!")
+
+@app.route("/teams")
+def updateTeamsRoute():
+    country = request.args.get('country', "england")  # Default to 'england' if not provided
+    updateTeams(country)
+    return "Teams updated successfully!", 200
+
+# Endpoint to add match event data   
+@app.route("/match_events")
+def updateMatchEvents():
+    season = request.args.get('season') 
+    secret = sd.getSecret()
     if season == "":
         season = str(datetime.now().year)
-    players = getPlayers(secret,season,39)
-    replaceTable('Players_PL_' + season, players)
-    return f"PL {season} season players updated successfully!", 200
+    match_events = api.getMatchEvents(secret,season,39) 
+    bqu.replaceTable('Match_Events_PL_' + season, match_events)
+    return f"PL {season} season match events updated successfully!", 200
 
 # Endpoint to update all data in parallel
 @app.route("/all")
 def updateAll():
-    # Create threads for updating data
-    thread1 = threading.Thread(target=updateLeagues)
-    thread2 = threading.Thread(target=updateTeams)
+
+    season = request.args.get('season') 
+
+    countries = get_all_countries()  # Fetch all league IDs from YAML config
 
 
-    # Start threads
-    thread1.start()
-    thread2.start()
+    if season == None:
+        season = datetime.now().year if datetime.now().month > 6 else datetime.now().year - 1
+
+    for c in countries:
+        print(f"Updating data for {c} in season {season}...")
+        # Create threads for updating data
+        thread1 = threading.Thread(target=updateTeams, args=(c, ))
+        thread2 = threading.Thread(target=updatePlayers, args=(season, c))
+        thread3 = threading.Thread(target=updatePlayersStats, args=(season, c))
+
+        # Start threads
+        thread1.start()
+        thread2.start()
+        thread3.start()
 
 
-    # Wait for threads to complete
-    thread1.join()
-    thread2.join()
-
+        # Wait for threads to complete
+        thread1.join()
+        thread2.join()
+        thread3.join()
+    
     return "All tables updated successfully!", 200
 
-# Similar endpoints for other update functions
-@app.route("/teams")
-def updateTeams():
-    secret = getSecret()
-    teams = getTeams(secret)
-    replaceTable('Teams', teams)
-    return "Teams updated successfully!", 200
 
-# Endpoint to add match event data   
-@app.route("/plevents")
-def updateMatchEvents():
-    season = request.args.get('season') 
-    secret = getSecret()
-    if season == "":
-        season = str(datetime.now().year)
-    match_events = getMatchEvents(secret,season,39) 
-    replaceTable('Match_Events_PL_' + season, match_events)
-    return f"PL {season} season match events updated successfully!", 200
+
 
 # Uncomment the following to run the Flask app locally
 if __name__ == "__main__":
-     app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+    app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
