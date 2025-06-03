@@ -6,7 +6,7 @@ with source as (
 
 player_stats as (
     select
-        SAFE_CAST(player_id AS STRING) AS player_id,
+        SAFE_CAST(player_id AS INT64) AS player_id,
         SAFE_CAST(player_name AS STRING) AS player_name,
         SAFE_CAST(player_firstname AS STRING) AS player_firstname,
         SAFE_CAST(player_lastname AS STRING) AS player_lastname,
