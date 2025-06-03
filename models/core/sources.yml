@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: staging
+    database: footballdataproject-458811
+    schema: dbt_jfairclough
+    tables:
+      - name: stg_teams
+      - name: stg_fixtures
+      - name: stg_players
+      - name: stg_leagues
+      - name: stg_match_events
