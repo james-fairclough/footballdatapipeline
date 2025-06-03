@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: raw
+    database: footballdataproject-458811
+    schema: APIFootballSource
+    tables:
+      - name: Teams
+      - name: Fixtures_PL_2023
+      - name: Players_PL_2023
+      - name: Leagues
+      - name: Match_Events_PL_2023
