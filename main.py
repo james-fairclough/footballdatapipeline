@@ -1,15 +1,9 @@
-import requests 
-import json 
-import pandas as pd
-import pandas_gbq 
-from google.cloud import bigquery as bq
-from google.cloud import secretmanager as sm
 from time import sleep
 import datetime 
 from flask import Flask, request
 import os
 import threading 
-from datetime import datetime, timezone
+from datetime import datetime
 import yaml
 import GCPBQUpadates as bqu
 import sourceData as sd
@@ -80,12 +74,11 @@ app = Flask(__name__)
 # Endpoint to update leagues data
 @app.route("/leagues")
 def updateLeagues():
-    country = request.args.get('country') 
     secret = sd.getSecret()
-    if season == None:
-        season = datetime.now().year if datetime.now().month > 6 else datetime.now().year - 1
-    leagues = api.getLeagues(secret, country)
-    bqu.replaceTable(f'Leagues_{country}', leagues)
+    countries = get_all_countries()  # Default to 'england' if not provided
+    for c in countries:    
+        leagues = api.getLeagues(secret, c)
+        bqu.replaceTable(f'Leagues_{c}', leagues)
     return "Leagues updated successfully!", 200
 
 # Endpoint to update fixtures data
@@ -151,13 +144,15 @@ def updatePlayersStatsRoute():
 def updateTeams(country):
     secret = sd.getSecret()
     teams = api.getTeams(secret, country)
-    bqu.replaceTable('Teams', teams)
+    bqu.replaceTable(f'teams_{country}', teams)
     print(f"{country} teams' updated successfully!")
 
 @app.route("/teams")
 def updateTeamsRoute():
-    country = request.args.get('country', "england")  # Default to 'england' if not provided
-    updateTeams(country)
+    countries = get_all_countries()  # Default to 'england' if not provided
+    for c in countries:    
+        updateTeams(c)
+
     return "Teams updated successfully!", 200
 
 # Endpoint to add match event data   
@@ -184,23 +179,24 @@ def updateAll():
         season = datetime.now().year if datetime.now().month > 6 else datetime.now().year - 1
 
     for c in countries:
+    #for c in ['england', 'germany']:
         print(f"Updating data for {c} in season {season}...")
         # Create threads for updating data
-        thread1 = threading.Thread(target=updateTeams, args=(c, ))
-        thread2 = threading.Thread(target=updatePlayers, args=(season, c))
+        #thread1 = threading.Thread(target=updateTeams, args=(c, ))
+        #thread2 = threading.Thread(target=updatePlayers, args=(season, c))
         thread3 = threading.Thread(target=updatePlayersStats, args=(season, c))
 
         # Start threads
-        thread1.start()
-        thread2.start()
+        #thread1.start()
+        #thread2.start()
         thread3.start()
 
 
         # Wait for threads to complete
-        thread1.join()
-        thread2.join()
+        #thread1.join()
+        #thread2.join()
         thread3.join()
-    
+        #sleep(60)
     return "All tables updated successfully!", 200
 
 
@@ -209,3 +205,4 @@ def updateAll():
 # Uncomment the following to run the Flask app locally
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+

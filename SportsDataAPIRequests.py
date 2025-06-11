@@ -56,6 +56,7 @@ def getPlayers(secret,season,league, page = 1, player_data = pd.DataFrame()):
     payload = {}
     r = make_request_with_retries(url, headers, payload)  # API request with retry logic
     p = json.loads(r.text)['paging']
+    print(f"Errors: {json.loads(r.text)['errors']}")
     r = json.loads(r.text)['response']
     r = pd.json_normalize(r, sep='_')
     r = r.drop('statistics', axis=1)
@@ -65,9 +66,9 @@ def getPlayers(secret,season,league, page = 1, player_data = pd.DataFrame()):
     if p["current"] < p["total"]:
         page = p["current"] + 1
 
-        if page == 4:
-            return player_data # added as current sub doesnt allow access past page 3
-        
+        #if page == 4:
+        #    return player_data # added as current sub doesnt allow access past page 3
+        sleep(.25)
         player_data = getPlayers(secret,season,league, page, player_data)
 
     return player_data  
@@ -81,6 +82,7 @@ def getPlayerStatistics(secret,season,league, page = 1, player_stats = pd.DataFr
     payload = {}
     r = make_request_with_retries(url, headers, payload)  # API request with retry logic
     p = json.loads(r.text)['paging']
+    print(f"Errors: {json.loads(r.text)['errors']}")
     r = json.loads(r.text)['response']
 
     stats_list = []  # Initialize an empty list to store player statistics
@@ -90,6 +92,7 @@ def getPlayerStatistics(secret,season,league, page = 1, player_stats = pd.DataFr
         for stat in player["statistics"]:  # Loop through their statistics
             stat["player_id"] = player_id  # Associate player ID
             stats_list.append(stat)
+        
 
     # Normalize the statistics data into a DataFrame
     stats_df = pd.json_normalize(stats_list, sep='_')
@@ -100,9 +103,9 @@ def getPlayerStatistics(secret,season,league, page = 1, player_stats = pd.DataFr
     if p["current"] < p["total"]:
         page = p["current"] + 1
 
-        if page == 4:
-            return player_stats # added as current sub doesnt allow access past page 3
-        
+        #if page == 4:
+        #    return player_stats # added as current sub doesnt allow access past page 3
+        sleep(.25)
         player_stats = getPlayerStatistics(secret,season,league, page, player_stats)
 
     return player_stats 
